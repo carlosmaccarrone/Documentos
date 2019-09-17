@@ -99,25 +99,25 @@ depende de la implementación. Puede apuntar a la dirección del último element
 en el stack (implementación Full stack) o a la siguiente dirección libre en el stack
 (implementación Empty stack).
 
-		--------------		--------------		--------------		--------------
-		|     ...    |		|     ...    |		|     ...    |		|     ...    |
-		|------------|		|------------|		|------------|		|------------|
-		|     ...    |		|     ...    |		|     ...    |      SP->|     ...    |
-		|------------|		|------------|		|------------|		|------------|
-		|    0x08    |	    SP->|    0x08    |		|    0x08    |		|    0x08    |
-		|------------|		|------------|		|------------|		|------------|
-		|    0x07    |		|    0x07    |		|    0x07    |		|    0x07    |
-		|------------|		|------------|		|------------|		|------------|
-	    SP->|    0x06    |		|    0x06    |		|    0x06    |		|    0x06    |
-		|------------|		|------------|		|------------|		|------------|
-		|    ...     |		|     ...    |      SP->|    ...     |		|     ...    |
-		|------------|		|------------|		|------------|		|------------|
-		|    ...     |		|     ...    |		|    ...     |		|     ...    |
-		|------------|		|------------|		|------------|		|------------|
-		    full 		     full 		    empty 		     empty
-		descendente 		ascendente	 	descendente 		ascendente
+	--------------		--------------		--------------		--------------
+	|     ...    |		|     ...    |		|     ...    |		|     ...    |
+	|------------|		|------------|		|------------|		|------------|
+	|     ...    |		|     ...    |		|     ...    |      SP->|     ...    |
+	|------------|		|------------|		|------------|		|------------|
+	|    0x08    |	    SP->|    0x08    |		|    0x08    |		|    0x08    |
+	|------------|		|------------|		|------------|		|------------|
+	|    0x07    |		|    0x07    |		|    0x07    |		|    0x07    |
+	|------------|		|------------|		|------------|		|------------|
+    SP->|    0x06    |		|    0x06    |		|    0x06    |		|    0x06    |
+	|------------|		|------------|		|------------|		|------------|
+	|    ...     |		|     ...    |      SP->|    ...     |		|     ...    |
+	|------------|		|------------|		|------------|		|------------|
+	|    ...     |		|     ...    |		|    ...     |		|     ...    |
+	|------------|		|------------|		|------------|		|------------|
+	    full 		     full 		    empty 		     empty
+	descendente 		ascendente	 	descendente 		ascendente
 
-					Fig 2 - Tipos de implementación del stack.
+			Fig 2 - Tipos de implementación del stack.
 
 El stack posee sólo dos instrucciones que son PUSH y POP. Push permite agregar un
 elemento donde apunte el SP y pop se utiliza para quitar del stack el elemento que
@@ -131,30 +131,30 @@ una función y se popean al finalizarla.
 genera una estructura de datos dentro del stack, llamada stack frame. Un stack frame
 es una porción de memoria dedicada para una sub-rutina específica.
 
-				|-------------------|	Direcciones Altas (H o High)
-				|		    |
-				|    stack frame    |
-				|     anterior 	    |
-				|                   |
-                                |-------------------|
-			   |----|		    |
-			   |	|    argumentos	    |
-			   |	|-------------------|
-		           |	|    instruction    |
-			   |	|     pointer (IP)  |
-			   |	|-------------------|
-	 	  Stack<---|	| frame base pointer|
-	  	  Frame	   |	| 	(BP)	    |
-			   |	|-------------------|
-			   |	|		    |
-			   |	| espacio reservado |
-			   |	|	para	    |
-			   |	| variables locales |
-		           |----|                   |
-				|-------------------|
-				|		    |	Direcciones Bajas (L o Low)
+			|-------------------|	Direcciones Altas (H o High)
+			|		    |
+			|    stack frame    |
+			|     anterior 	    |
+			|                   |
+                        |-------------------|
+		   |----|		    |
+		   |	|    argumentos	    |
+		   |	|-------------------|
+	           |	|    instruction    |
+		   |	|     pointer (IP)  |
+		   |	|-------------------|
+ 	  Stack<---|	| frame base pointer|
+  	  Frame	   |	| 	(BP)	    |
+		   |	|-------------------|
+		   |	|		    |
+		   |	| espacio reservado |
+		   |	|	para	    |
+		   |	| variables locales |
+	           |----|                   |
+			|-------------------|
+			|		    |	Direcciones Bajas (L o Low)
 
-			Fig 3 - Dos stack frames contiguos.
+		Fig 3 - Dos stack frames contiguos.
 
 [*] stack frame anterior contiene un puntero hacia el stack frame anterior.
 
@@ -224,9 +224,7 @@ poseen 16 registros de propósito general y cada registro tiene una longitud de 
 			|----------------------------------------------------------------|
 
 							|--------------------------------|
-					
 					32 bits		|		EAX		 |
-							
 							|--------------------------------|
 
 									|----------------|
